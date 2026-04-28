@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { Logger } from '@nestjs/common';
 import {
   GitHubIdentity,
@@ -9,9 +9,62 @@ import {
 
 const logger = new Logger('IntegrationsHelper');
 
+interface GitHubApiResponse {
+  login: string;
+  name?: string | null;
+  avatar_url: string;
+  bio?: string | null;
+  public_repos: number;
+  followers: number;
+  following: number;
+  created_at: string;
+}
+
+interface TwitterApiResponse {
+  data: {
+    id: string;
+    username: string;
+    name: string;
+    description?: string | null;
+    public_metrics?: {
+      followers_count?: number;
+      following_count?: number;
+      tweet_count?: number;
+    };
+    verified?: boolean;
+  };
+}
+
+interface DiscordApiResponse {
+  id: string;
+  username: string;
+  discriminator: string;
+  avatar?: string | null;
+  global_name?: string | null;
+}
+
+interface EnsApiResponse {
+  ens?: string | null;
+  avatar?: string | null;
+}
+
+interface AxiosLikeError {
+  response?: {
+    status?: number;
+  };
+}
+
+function isAxiosLikeError(error: unknown): error is AxiosLikeError {
+  return typeof error === 'object' && error !== null && 'response' in error;
+}
+
+function getAxiosStatus(error: unknown): number | undefined {
+  return isAxiosLikeError(error) ? error.response?.status : undefined;
+}
+
 export async function fetchGitHubIdentity(token: string): Promise<GitHubIdentity | null> {
   try {
-    const { data } = await axios.get('https://api.github.com/user', {
+    const { data } = await axios.get<GitHubApiResponse>('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
     });
@@ -26,7 +79,7 @@ export async function fetchGitHubIdentity(token: string): Promise<GitHubIdentity
       createdAt: data.created_at,
     };
   } catch (err) {
-    const status = (err as AxiosError).response?.status;
+    const status = getAxiosStatus(err);
     if (status === 401) {
       logger.warn('GitHub token expired or invalid');
     } else {
@@ -38,7 +91,7 @@ export async function fetchGitHubIdentity(token: string): Promise<GitHubIdentity
 
 export async function fetchTwitterIdentity(token: string): Promise<TwitterIdentity | null> {
   try {
-    const { data } = await axios.get('https://api.twitter.com/2/users/me', {
+    const { data } = await axios.get<TwitterApiResponse>('https://api.twitter.com/2/users/me', {
       headers: { Authorization: `Bearer ${token}` },
       params: {
         'user.fields': 'description,public_metrics,verified',
@@ -57,7 +110,7 @@ export async function fetchTwitterIdentity(token: string): Promise<TwitterIdenti
       verified: user.verified ?? false,
     };
   } catch (err) {
-    const status = (err as AxiosError).response?.status;
+    const status = getAxiosStatus(err);
     if (status === 401) {
       logger.warn('Twitter token expired or invalid');
     } else {
@@ -69,7 +122,7 @@ export async function fetchTwitterIdentity(token: string): Promise<TwitterIdenti
 
 export async function fetchDiscordIdentity(token: string): Promise<DiscordIdentity | null> {
   try {
-    const { data } = await axios.get('https://discord.com/api/users/@me', {
+    const { data } = await axios.get<DiscordApiResponse>('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
     });
@@ -81,7 +134,7 @@ export async function fetchDiscordIdentity(token: string): Promise<DiscordIdenti
       globalName: data.global_name ?? null,
     };
   } catch (err) {
-    const status = (err as AxiosError).response?.status;
+    const status = getAxiosStatus(err);
     if (status === 401) {
       logger.warn('Discord token expired or invalid');
     } else {
@@ -97,7 +150,7 @@ export async function fetchWalletMetadata(walletAddress: string): Promise<Wallet
   let avatarUrl: string | null = null;
 
   try {
-    const { data } = await axios.get(
+    const { data } = await axios.get<EnsApiResponse>(
       `https://ensdata.net/${walletAddress}`,
       { timeout: 3000 },
     );
